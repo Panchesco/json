@@ -211,7 +211,7 @@ class Json
 
       $query->free_result();
 
-      foreach ($this->entries as &$entry)
+      foreach ($this->entries as $key => &$entry)
       {
         if (isset($yearweek))
         {
@@ -236,11 +236,13 @@ class Json
 
         foreach ($this->entries_custom_fields as &$field)
         {
+          
           //call our custom callback for this fieldtype if it exists
           if (isset($entry[$field['field_name']]) && is_callable(array($this, 'entries_'.$field['field_type'])))
           {
             $entry[$field['field_name']] = call_user_func(array($this, 'entries_'.$field['field_type']), $entry['entry_id'], $field, $entry[$field['field_name']], $entry);
           }
+
         }
 
         if ($show_categories)
@@ -293,10 +295,150 @@ class Json
     ee()->load->library('javascript');
 
     ee()->load->library('typography');
-    
+   
    return $this->respond($this->entries, array(ee()->typography, 'parse_file_paths'));
 
   }
+  
+ //-----------------------------------------------------------------------------  
+ protected function entries_file($entry_id, $field, $field_data) {
+	 
+	 $token = $this->filedir_token($field_data);
+	 $file_name = $this->file_name($field_data);
+	 $upload_location_id = $this->upload_location_id($token);
+	 
+	 
+	 $data = $this->file_row($upload_location_id,$file_name);
+	 $data['url'] = $this->upload_prefs_url($upload_location_id) . $file_name;
+	 $data['sizes'] = $this->file_dimensions($upload_location_id,$file_name);
+	 
+	 return $data;
+	 
+ }
+  
+  
+//-----------------------------------------------------------------------------  
+  /**
+   * Return file dimensions for upload_location/s
+   * @param $upload_location_id = mixed int/array
+   * @return array
+   */
+  protected function file_dimensions($upload_location_id,$file_name='') 
+  {
+	  	$data = array();
+	  	$sizes = ee()->TMPL->fetch_param('file_manipulations');
+
+	  	
+	  	if(!is_array($upload_location_id)) {
+		  $upload_location_id = array($upload_location_id);
+	  	}
+	  	
+	  	
+	  	ee()->db->select('upload_prefs.url,
+	  					file_dimensions.short_name,
+	  					file_dimensions.resize_type,
+	  					file_dimensions.width,
+	  					file_dimensions.height');
+	  	ee()->db->from('file_dimensions');
+	  	ee()->db->join('upload_prefs','upload_prefs.id=file_dimensions.upload_location_id');
+	  	ee()->db->where_in('upload_location_id',$upload_location_id);
+	  		  	
+	  	if($sizes) {
+		  	$sizes = explode("|",$sizes);
+		  	ee()->db->where_in('short_name',$sizes);
+	  	}
+	  	
+	  	
+
+	  $query = ee()->db->get();  
+	  
+	  foreach($query->result_array() as $key => $row) {
+		  $data[$row['short_name']] = array('url'=> $row['url'] . '_' . $row['short_name'] . '/' . $file_name,
+		  									'resize_type' => $row['resize_type'],
+		  									'width' => $row['width'],
+		  									'height' => $row['height']);
+	  }
+	  
+	 $query->free_result();
+	
+	return $data;
+  }
+//-----------------------------------------------------------------------------  
+/**
+ * Get file_upload directory from token.
+ * @param $token string
+ * @return array
+ */
+ protected function upload_location_id($token)
+ {
+      // Get directory id.
+      return str_replace(array('{filedir_','}'), '', $token); 
+ }
+//-----------------------------------------------------------------------------
+
+/** Return url for upload directory.
+ * @param $upload_location_id integer
+ * @return string
+ */
+ protected function upload_prefs_url($upload_location_id)
+ {
+	 $query =  ee()->db->select('url')
+	 			->where('id',$upload_location_id)
+	 			->limit(1)
+	 			->get('upload_prefs');
+	 if($query->num_rows()==1) {
+		return $query->row()->url; 
+	 } else {
+		 return '';
+	 }
+ }
+//----------------------------------------------------------------------------- 
+/** 
+ * Get files row.
+ * @param $upload_location_id integer
+ * @param $file_name string
+ * @return array
+ */
+ protected function file_row($upload_location_id,$file_name) 
+ {
+	 $data = array();
+	 $sel = array('file_id','title','mime_type','description','credit','location');
+	 $query = ee()->db->select($sel)
+	 		->where('upload_location_id',$upload_location_id)
+	 		->where('file_name',$file_name)
+	 		->limit(1)
+	 		->get('files');
+	 		
+	 if($query->num_rows()==1) {
+		 $data = $query->row_array();
+	 }
+	 
+	 return $data;
+	  
+ }
+ 
+//-----------------------------------------------------------------------------   
+/** 
+ * Extract filedir token from file $field_data string.
+ * @param $str string.
+ * @return string
+ */
+ protected function filedir_token($str) 
+ {
+      return substr($str,0,strpos($str,'}')+1);
+ }
+//-----------------------------------------------------------------------------
+    
+/**
+ * Return filename from file $field_data string.
+ * @param $str string
+ * @param string
+ */
+protected function file_name($str) 
+{
+	return substr($str,strpos($str,'}')+1);
+}
+//-----------------------------------------------------------------------------  
 
   protected function entries_matrix($entry_id, $field, $field_data)
   {
@@ -360,7 +502,7 @@ class Json
 
     return $data;
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_grid($entry_id, $field, $field_data)
   {
     if ( ! isset($this->entries_grid_rows[$field['field_id']]))
@@ -419,7 +561,7 @@ class Json
 
     return $data;
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_rel($entry_id, $field, $field_data)
   {
     if (is_null($this->entries_rel_data))
@@ -445,7 +587,7 @@ class Json
 
     return $this->entries_rel_data[$field_data];
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_relationship($entry_id, $field, $field_data)
   {
     if (is_null($this->entries_relationship_data))
@@ -480,7 +622,7 @@ class Json
 
     return array();
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_playa($entry_id, $field, $field_data)
   {
     if (is_null($this->entries_playa_data))
@@ -515,7 +657,7 @@ class Json
 
     return array();
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_channel_files($entry_id, $field, $field_data, $entry)
   {
     $this->entries_channel_files_data = array();
@@ -649,7 +791,7 @@ class Json
 
     return $field_data;
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_custom_field($entry_id, $field, $field_data, $entry, $tagdata = ' ')
   {
     ee()->load->add_package_path(ee()->api_channel_fields->ft_paths[$field['field_type']], FALSE);
@@ -684,7 +826,7 @@ class Json
 
     return $field_data;
   }
-
+//----------------------------------------------------------------------------- 
   protected function entries_assets($entry_id, $field, $field_data, $entry)
   {
     $field_data = $this->entries_custom_field($entry_id, $field, $field_data, $entry);
@@ -750,10 +892,11 @@ class Json
         }
       }
     }
-
+    
+    
     return $field_data;
   }
-
+//----------------------------------------------------------------------------- 
   public function search()
   {
     $search_id = ee()->TMPL->fetch_param('search_id');
@@ -788,7 +931,7 @@ class Json
 
     return $this->respond(array());
   }
-
+//----------------------------------------------------------------------------- 
   /**
    * Categories
    *
@@ -856,7 +999,7 @@ class Json
       ee()->db->where('count >', 0);
     }
   }
-
+//----------------------------------------------------------------------------- 
   /**
    * Members
    *
@@ -1006,7 +1149,7 @@ class Json
 
     return $this->respond($members);
   }
-
+//----------------------------------------------------------------------------- 
   protected function initialize($which = NULL)
   {
     switch($which)
