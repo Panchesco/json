@@ -28,6 +28,8 @@ class Json
   protected $entries_playa_data;
   protected $entries_channel_files_data;
   protected $image_manipulations = array();
+  protected $file_dimensions = array();
+  public $upload_prefs_urls = array();
 
   public function entries($entry_ids = null)
   {
@@ -295,7 +297,8 @@ class Json
     ee()->load->library('javascript');
 
     ee()->load->library('typography');
-   
+    
+    
    return $this->respond($this->entries, array(ee()->typography, 'parse_file_paths'));
 
   }
@@ -315,7 +318,32 @@ class Json
 	 return $data;
 	 
  }
-  
+//-----------------------------------------------------------------------------
+
+/**
+ * Check if the file_dimensions array has already been added to the file_dimensions
+ * property.
+ * @param $upload_location_id integer 
+ * @return boolean
+ */
+ protected function file_dimensions_exists($upload_location_id) 
+ {
+	 return in_array($upload_location_id,array_keys($this->file_dimensions));
+ } 
+ 
+ //-----------------------------------------------------------------------------
+
+/**
+ * Add file dimensions array to file_dimensions property
+ * @param $upload_location_id integer
+ * @param $data array 
+ * @return null
+ */
+ protected function file_dimensions_add($upload_location_id,$data) 
+ {
+	$this->file_dimensions[$upload_location_id] = $data;
+	return;
+ } 
   
 //-----------------------------------------------------------------------------  
   /**
@@ -327,12 +355,23 @@ class Json
   {
 	  	$data = array();
 	  	$sizes = ee()->TMPL->fetch_param('file_manipulations');
+	  	
+	  	/* If this data is already in $this->file_dimensions array,
+	  	 * get it from there.
+	  	 */
+	  	 
+	  	 if (!is_array($upload_location_id) && $this->file_dimensions_exists($upload_location_id)) {
+		  	
+	  	 	$data = $this->file_dimensions[$upload_location_id];
+	  	 
+	  	 } else {
 
 	  	
 	  	if(!is_array($upload_location_id)) {
-		  $upload_location_id = array($upload_location_id);
+		  	$upload_location_array = array($upload_location_id);
+	  	} else {
+		  	$upload_location_array = $upload_location_id;
 	  	}
-	  	
 	  	
 	  	ee()->db->select('upload_prefs.url,
 	  					file_dimensions.short_name,
@@ -341,27 +380,39 @@ class Json
 	  					file_dimensions.height');
 	  	ee()->db->from('file_dimensions');
 	  	ee()->db->join('upload_prefs','upload_prefs.id=file_dimensions.upload_location_id');
-	  	ee()->db->where_in('upload_location_id',$upload_location_id);
+	  	ee()->db->where_in('upload_location_id',$upload_location_array);
 	  		  	
 	  	if($sizes) {
 		  	$sizes = explode("|",$sizes);
 		  	ee()->db->where_in('short_name',$sizes);
 	  	}
 	  	
-	  	
-
-	  $query = ee()->db->get();  
+	  	$query = ee()->db->get();  
 	  
-	  foreach($query->result_array() as $key => $row) {
-		  $data[$row['short_name']] = array('url'=> $row['url'] . '_' . $row['short_name'] . '/' . $file_name,
-		  									'resize_type' => $row['resize_type'],
-		  									'width' => $row['width'],
-		  									'height' => $row['height']);
+	  	foreach($query->result_array() as $key => $row) {
+	  	     $data[$row['short_name']] = array('short_name'=> $row['short_name'],
+	  	     									'resize_type' => $row['resize_type'],
+	  	     									'width' => $row['width'],
+	  	     									'height' => $row['height'],
+	  	     									'url' => $row['url'] . '_' . $row['short_name'] . '/');
 	  }
 	  
 	 $query->free_result();
-	
+	 
+	 // Add data to the file_dimensions property.
+	 $this->file_dimensions_add($upload_location_id,$data);
+	 
+	 }
+	 
+	 // Build array string for this file's url.
+	 
+	 foreach($data as $short_name => $vals) {
+		 $data[$short_name]['url'].=  $file_name;
+	 }
+	 
+	 
 	return $data;
+	
   }
 //-----------------------------------------------------------------------------  
 /**
@@ -376,21 +427,46 @@ class Json
  }
 //-----------------------------------------------------------------------------
 
+/**
+ * Check if the upload_prefs url for current upload location id 
+ * has already been added to the upload_prefs_urls property
+ * @param $upload_location_id integer 
+ * @return boolean
+ */
+ protected function upload_url_exists($upload_location_id) 
+ {
+	 return in_array($upload_location_id,array_keys($this->upload_prefs_urls));
+ } 
+
+//-----------------------------------------------------------------------------
+
 /** Return url for upload directory.
  * @param $upload_location_id integer
  * @return string
  */
  protected function upload_prefs_url($upload_location_id)
  {
-	 $query =  ee()->db->select('url')
-	 			->where('id',$upload_location_id)
-	 			->limit(1)
-	 			->get('upload_prefs');
-	 if($query->num_rows()==1) {
-		return $query->row()->url; 
-	 } else {
-		 return '';
+	 $url = '';
+	 
+	 	if($this->upload_url_exists($upload_location_id)) {
+		 
+		 $url = $this->upload_prefs_urls[$upload_location_id];
+		 	
+	 	} else {
+	 
+	 
+	 	$query =  ee()->db->select('url')
+	 				->where('id',$upload_location_id)
+	 				->limit(1)
+	 				->get('upload_prefs');
+	 	if($query->num_rows()==1) {
+	 		$url = $query->row()->url; 
+	 		$this->upload_prefs_urls[$upload_location_id] = $url;
+	 	} 
+	 
 	 }
+	 
+	 return $url;
  }
 //----------------------------------------------------------------------------- 
 /** 
